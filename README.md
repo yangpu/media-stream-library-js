@@ -1,3 +1,7 @@
+NOTE: This library has been archived and will no longer receive regular maintenance.
+For continued use, we recommend to vendor the source code and keep
+dependencies up to date instead of using the published NPM packages.
+
 # Media Stream Library JS
 
 [![CI][ci-image]][ci-url]
