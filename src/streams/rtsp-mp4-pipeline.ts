@@ -16,6 +16,10 @@ export interface Html5VideoConfig {
   ws: WebSocketConfig
   rtsp: RtspConfig
   mediaElement: HTMLVideoElement
+  /** Called when the stream pipeline fails (e.g. closed stream). Use to recover by closing and restarting. */
+  onStreamError?: (err: unknown) => void
+  /** Called when the WebSocket is closed (e.g. network drop). Use to trigger auto-reconnect. */
+  onWebSocketClose?: (code: number, reason: string) => void
 }
 
 /*
@@ -41,11 +45,18 @@ export class RtspMp4Pipeline {
 
   private readonly socket: Promise<WebSocket>
 
+  private readonly onStreamError?: (err: unknown) => void
+  private readonly onWebSocketClose?: (code: number, reason: string) => void
+
   constructor({
     ws: wsConfig,
     rtsp: rtspConfig,
     mediaElement,
+    onStreamError,
+    onWebSocketClose,
   }: Html5VideoConfig) {
+    this.onStreamError = onStreamError
+    this.onWebSocketClose = onWebSocketClose
     this.mse = new MseSink(mediaElement)
     this.rtsp = new RtspSession(rtspConfig)
     this.socket = openWebSocket(wsConfig)
@@ -62,7 +73,8 @@ export class RtspMp4Pipeline {
   ): Promise<{ sdp: Sdp; range?: [string, string] }> {
     const socket = await this.socket
     socket.addEventListener('close', (e) => {
-      console.warn('WebSocket closed with code:', e.code)
+      logDebug('WebSocket closed:', e.code, e.reason)
+      this.onWebSocketClose?.(e.code, e.reason ?? '')
     })
 
     const result = this.rtsp.start(offset)
@@ -80,6 +92,10 @@ export class RtspMp4Pipeline {
         r.status === 'rejected' ? r.reason : 'stream ended'
       )
       logDebug(`rtsp-mp4 pipeline ended: downstream: ${down} upstream: ${up}`)
+      const err = results.find((r) => r.status === 'rejected')
+      if (err?.status === 'rejected' && this.onStreamError) {
+        this.onStreamError(err.reason)
+      }
     })
 
     return result

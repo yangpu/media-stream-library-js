@@ -39,7 +39,12 @@ export class WSSource {
           if (e.code === CLOSE_GOING_AWAY) {
             logWarn('server closed connection')
           }
-          controller.close()
+          try {
+            controller.close()
+          } catch (err) {
+            // Stream may already be errored by downstream; avoid secondary throw
+            logWarn('readable already closed or errored when closing', err)
+          }
         })
       },
       cancel: () => {

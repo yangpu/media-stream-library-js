@@ -46,9 +46,9 @@ export class RtpDepay extends TransformStream<
           case 'rtp': {
             const parse = payloadTypeParser[msg.payloadType]
             if (!parse) {
-              return controller.error(
-                `no parser for payload type ${msg.payloadType}, expected one of ${Object.keys(payloadTypeParser)}`
-              )
+              // Skip unsupported payload types (e.g. PCMA) so video-only or
+              // H264+AAC pipelines still work when camera sends other audio.
+              return
             }
 
             const payloadMessage = parse(msg)

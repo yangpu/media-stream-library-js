@@ -2,6 +2,7 @@
 
 import { connect } from 'node:net'
 import { WebSocketServer } from 'ws'
+import util from 'node:util'
 
 function usage() {
   console.error(`
@@ -26,30 +27,77 @@ for (const portmap of portmaps) {
     `starting WebSocket server at ws://localhost:${wsPort} proxying data to rtsp://localhost:${rtspPort}`
   )
 
+  const defaultRtspPort = Number(rtspPort) || 554
+
   const wss = new WebSocketServer({ host: '::', port: Number(wsPort) })
   let rtspSocket
+  let pendingMessages = []
+
+  /** 从首条 RTSP 请求里解析目标地址，例如 DESCRIBE rtsp://user:pass@host:port/path RTSP/1.0 */
+  function parseRtspTarget(firstChunk) {
+    const firstLine = firstChunk.toString('utf8').split(/\r?\n/)[0] || ''
+    const uri = firstLine.split(/\s+/)[1]
+    if (!uri || !uri.startsWith('rtsp')) return null
+    try {
+      const u = new URL(uri)
+      return { host: u.hostname, port: u.port ? Number(u.port) : defaultRtspPort }
+    } catch {
+      return null
+    }
+  }
+
   wss.on('connection', (webSocket) => {
     rtspSocket?.destroy()
+    rtspSocket = null
+    pendingMessages = []
 
     console.log('new connection', new Date())
 
-    rtspSocket = connect(Number(rtspPort) || 554)
+    function forwardToRtsp(data) {
+      if (rtspSocket && rtspSocket.writable) {
+        rtspSocket.write(data)
+      } else {
+        pendingMessages.push(data)
+      }
+    }
 
-    // pass incoming messages to the RTSP server
+    function flushPending() {
+      if (!rtspSocket || !rtspSocket.writable) return
+      for (const chunk of pendingMessages) rtspSocket.write(chunk)
+      pendingMessages = []
+    }
+
     webSocket.on('message', (data) => {
-      rtspSocket.write(data)
+      if (!rtspSocket) {
+        const target = parseRtspTarget(data)
+        const host = target?.host ?? '127.0.0.1'
+        const port = target?.port ?? defaultRtspPort
+        console.log('rtsp target from URI:', host + ':' + port)
+        rtspSocket = connect(port, host)
+        rtspSocket.on('connect', () => flushPending())
+        rtspSocket.on('data', (chunk) => {
+          if (webSocket.readyState === 1) webSocket.send(chunk)
+        })
+        rtspSocket.on('error', (err) => {
+          console.error('RTSP socket fail:', err)
+          if (webSocket.readyState === 1) webSocket.close(4000, 'RTSP error')
+        })
+        rtspSocket.on('close', (hadError) => {
+          rtspSocket = null
+          if (webSocket.readyState === 1) webSocket.close(4000, 'RTSP closed')
+        })
+        forwardToRtsp(data)
+        return
+      }
+      forwardToRtsp(data)
     })
     webSocket.on('error', (err) => {
       console.error('WebSocket fail:', err)
-      rtspSocket.end()
+      rtspSocket?.end()
     })
-    // pass data from the RTSP server back through the WebSocket
-    rtspSocket.on('data', (data) => {
-      webSocket.send(data)
-    })
-    rtspSocket.on('error', (err) => {
-      console.error('RTSP socket fail:', err)
-      webSocket.close()
+    webSocket.on('close', () => {
+      rtspSocket?.end()
+      rtspSocket = null
     })
   })
 

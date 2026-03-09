@@ -81,12 +81,13 @@ export class MseSink {
     this.lastCheckpointTime = checkpointTime ?? this.lastCheckpointTime
     if (
       this.lastCheckpointTime === 0 ||
-      Math.floor(this.lastCheckpointTime) % 10 !== 0
+      Math.floor(this.lastCheckpointTime) % 2 !== 0
     ) {
       return
     }
+    // 只保留约 2 秒缓冲，便于实时画面、降低延时
     return Math.floor(
-      Math.min(this.videoEl.currentTime, this.lastCheckpointTime) - 10
+      Math.min(this.videoEl.currentTime, this.lastCheckpointTime) - 2
     )
   }
 

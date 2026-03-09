@@ -401,12 +401,16 @@ export class RtspSession {
     clearInterval(this.keepaliveInterval)
     this.keepaliveInterval = setInterval(
       () => {
-        // Note: An OPTIONS request intended for keeping alive an RTSP
-        // session MUST include the Session header with the associated
-        // session identifier. Such a request SHOULD also use the media or the
-        // aggregated control URI as the Request-URI.
         this.options().catch((err) => {
-          logError('failed to keep alive RTSP session:', err)
+          const msg = err?.message ?? String(err)
+          const isClosedStream =
+            /closed.*readable stream|Cannot enqueue/.test(msg)
+          if (isClosedStream) {
+            this.clearKeepalive()
+            logDebug('keepalive stopped (stream closed):', msg)
+          } else {
+            logError('failed to keep alive RTSP session:', err)
+          }
         })
       },
       Math.max(MIN_SESSION_TIMEOUT, timeout - 5) * 1000

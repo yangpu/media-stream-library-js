@@ -1,3 +1,5 @@
+import { logDebug } from './log'
+
 // Time in milliseconds we want to wait for a websocket to open
 const WEBSOCKET_TIMEOUT = 10007
 
@@ -74,8 +76,8 @@ export const openWebSocket = async ({
       resolve(ws)
     }
     ws.onerror = (e) => {
-      console.error('openwebsocket: failed', e)
-      reject(e)
+      logDebug('openwebsocket: connection failed', e)
+      reject(new Error('WebSocket connection failed'))
     }
   })
 }
